@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LOCK-IN | Ultimate Edition</title>
+    <style>
+        :root {
+            --bg: #0F143A; --surface: #395DBB; --accent: #67CCF6;
+            --secondary: #71D5F7; --text: #c8ddf5; --danger: #ff4d4d;
+            --modal-bg: rgba(15, 20, 58, 0.95);
+        }
+        .light-mode {
+            --bg: #FADFB2; --surface: #F1967D; --accent: #B6CA91;
+            --secondary: #79A476; --text: #51804d; --danger: #e63946;
+            --modal-bg: rgba(250, 223, 178, 0.95);
+        }
+
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; }
+
+        /* Toolbar */
+        #toolbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 60px;
+            background: var(--surface); display: flex; align-items: center;
+            justify-content: space-between; padding: 0 10px; z-index: 1000;
+            border-bottom: 2px solid var(--secondary);
+        }
+
+        .tool-section { display: flex; align-items: center; gap: 8px; }
+
+        .timer-cluster { 
+            display: flex; align-items: center; background: rgba(0,0,0,0.2); 
+            padding: 4px 8px; border-radius: 4px; gap: 2px;
+        }
+        .timer-cluster label { font-size: 10px; font-weight: bold; margin-right: 5px; opacity: 0.8; }
+        .timer-cluster input { 
+            width: 32px; height: 24px; background: var(--bg); color: var(--text); 
+            border: 1px solid var(--secondary); text-align: center; border-radius: 3px;
+            font-size: 13px; font-family: monospace;
+        }
+
+        .btn {
+            background: var(--secondary); color: white; border: none;
+            padding: 8px 12px; border-radius: 4px; cursor: pointer;
+            font-weight: bold; text-transform: uppercase; font-size: 11px;
+            white-space: nowrap;
+        }
+        .btn:hover { filter: brightness(1.2); }
+        .btn-start { background: #37ffb9; color: #000; }
+        .btn-stop { background: var(--danger); color: white; }
+
+        /* Canvas */
+        #viewport { 
+            width: 100vw; height: 100vh; overflow: hidden; cursor: grab;
+            background-image: radial-gradient(var(--secondary) 1px, transparent 1px); 
+            background-size: 50px 50px; 
+        }
+        #viewport:active { cursor: grabbing; }
+        #board { position: relative; width: 8000px; height: 8000px; transform-origin: 0 0; }
+        
+        /* Nodes */
+        .node { position: absolute; cursor: move; border: 2px solid transparent; resize: both; overflow: hidden; min-width: 50px; min-height: 50px; background: var(--accent); color: #0b1838; padding: 10px; border-radius: 4px; }
+        .node.selected { border: 2px solid var(--accent); box-shadow: 0 0 15px var(--accent); }
+        
+        /* Transparent selection for images */
+        .node.img-node { background: transparent; padding: 0; }
+        .node.img-node.selected { border: 2px solid var(--accent); box-shadow: none; }
+
+        .node textarea { width: 100%; height: 100%; background: transparent; border: none; outline: none; resize: none; font-size: 1rem; color: #0b1838; }
+        .node img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+
+        /* Modals */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); display: flex; align-items: center;
+            justify-content: center; z-index: 2000;
+        }
+        .modal-content {
+            background: var(--surface); padding: 40px; border-radius: 12px;
+            max-width: 500px; position: relative; border: 3px solid var(--accent);
+            text-align: center; line-height: 1.6; color: white;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        
+        /* Alarm State */
+        body.alarm-active { background: var(--danger) !important; animation: pulse 0.3s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.8; } 100% { opacity: 1; } }
+
+        #insult-popup {
+            display: none; position: fixed; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); z-index: 3000;
+            background: var(--bg); border: 5px solid var(--text);
+            padding: 40px; border-radius: 20px; text-align: center;
+            font-size: 1.8rem; font-weight: bold; color: var(--danger);
+            width: 70%; box-shadow: 0 0 50px rgba(0,0,0,0.5);
+        }
+
+        #display-timers span { font-variant-numeric: tabular-nums; }
+    </style>
+</head>
+<body ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
+
+<!-- Instruction Modal (No X Button) -->
+<div id="instructionModal" class="modal-overlay">
+    <div class="modal-content">
+        <h2>Welcome to LOCK-IN</h2>
+        <p>Do you tend to procrastinate on your work cause you often get distracted? Well fear no more!</p>
+        <p>With Lock-in, all you have to do is set how long you want your work session to last and the time you estimate yourself getting sidetracked.</p>
+        <p>If you remain idle for longer than the specified time, we will give you the motivation that you deserve :D</p>
+        <button class="btn btn-start" onclick="closeModal('instructionModal')" style="margin-top:20px; padding: 12px 30px; font-size: 14px;">Let's get to work</button>
+    </div>
+</div>
+
+<!-- Insult Popup (Alarm) -->
+<div id="insult-popup">
+    <div id="insult-text">You're a disappointment to your family.</div>
+</div>
+
+<div id="toolbar">
+    <div class="tool-section">
+        <button class="btn" onclick="addNote()">+ Note</button>
+        <button class="btn" onclick="document.getElementById('imgIn').click()">+ Image</button>
+        <input type="file" id="imgIn" hidden accept="image/*" onchange="handleFile(this.files)">
+        <button class="btn" onclick="toggleTheme()">🌓 Theme</button>
+    </div>
+
+    <div id="setup" class="tool-section">
+        <div class="timer-cluster">
+            <label>GOAL</label>
+            <input type="number" id="gh" value="00" min="0"><span>:</span>
+            <input type="number" id="gm" value="25" min="0"><span>:</span>
+            <input type="number" id="gs" value="00" min="0">
+        </div>
+        <div class="timer-cluster">
+            <label>IDLE</label>
+            <input type="number" id="ih" value="00" min="0"><span>:</span>
+            <input type="number" id="im" value="00" min="0"><span>:</span>
+            <input type="number" id="is" value="20" min="0">
+        </div>
+        <button class="btn btn-start" onclick="start()">Start</button>
+    </div>
+
+    <div id="active-ui" class="tool-section" style="display:none;">
+        <div id="display-timers" style="font-family: monospace; font-weight: bold; font-size: 14px;">
+            GOAL: <span id="txt-goal">00:25:00</span> | <span id="txt-idle" style="color:var(--text)">IDLE: 00:00:20</span>
+        </div>
+        <button class="btn btn-stop" onclick="stop()">STOP</button>
+    </div>
+
+    <div class="tool-section">
+        <button class="btn" onclick="undo()">⟲ Undo</button>
+        <button class="btn" onclick="save()">💾 Save</button>
+        <button class="btn" onclick="load()">📂 Load</button>
+    </div>
+</div>
+
+<div id="viewport">
+    <div id="board"></div>
+</div>
+
+<audio id="alarm" loop src="Alarm.wav"></audio>
+
+<script>
+    let zoom = 1.0; 
+    let isRunning = false; 
+    let alarmActive = false;
+    let alarmLockUntil = 0; 
+    let lastMouseX = 0, lastMouseY = 0; 
+    let idleSec = 0, goalSec = 0, idleLimit = 20;
+    let history = []; 
+    let selectedNode = null;
+    
+    let isPanning = false;
+    let startX, startY, scrollLeft, scrollTop;
+
+    const board = document.getElementById('board');
+    const viewport = document.getElementById('viewport');
+    const alarm = document.getElementById('alarm');
+    const insultPopup = document.getElementById('insult-popup');
+    const insultText = document.getElementById('insult-text');
+
+    const insults = [
+        "You're a disappointment to your family.",
+        "If effort were money, you’d be broke.",
+        "If failing were a sport, you'll be in the hall of fame.",
+        "You treat deadlines like suggestions.",
+        "You’re not busy—you’re just professionally avoiding responsibility.",
+        "You would procrastinate breathing if it were optional.",
+        "You work best under pressure… which is why you wait until the last minute.",
+        "Your pace makes snails look like Usain Bolt.",
+        "Your efforts exist only in theory.",
+        "The world would have to end before you actually start doing something.",
+        "Your family expected greatness… and got a cautionary tale.",
+        "Your family tree must be wondering where it went wrong.",
+        "You’re preparing for unemployment like it’s a career path.",
+        "Your résumé is just blank space and excuses.",
+        "Let's be honest, you have no future.",
+        "You’re the reason your parents stay quiet during family bragging sessions.",
+        "You have a real knack for procrastinating your own future.",
+        "Your career plan is ‘figure it out when I’m homeless.’",
+        "There are five-year-olds who’ve accomplished more than you ever have."
+    ];
+
+    function closeModal(id) { 
+        document.getElementById(id).style.display = 'none'; 
+        alarm.play().then(() => { alarm.pause(); alarm.currentTime = 0; });
+    }
+
+    viewport.addEventListener('mousedown', (e) => {
+        if (e.button === 1) { 
+            isPanning = true;
+            startX = e.pageX - viewport.offsetLeft;
+            startY = e.pageY - viewport.offsetTop;
+            scrollLeft = viewport.scrollLeft;
+            scrollTop = viewport.scrollTop;
+            e.preventDefault();
+        }
+    });
+
+    window.addEventListener('mouseup', () => { isPanning = false; });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
+        const x = e.pageX - viewport.offsetLeft;
+        const y = e.pageY - viewport.offsetTop;
+        const walkX = (x - startX);
+        const walkY = (y - startY);
+        viewport.scrollLeft = scrollLeft - walkX;
+        viewport.scrollTop = scrollTop - walkY;
+    });
+
+    window.addEventListener('wheel', (e) => {
+        if (e.ctrlKey) { 
+            e.preventDefault();
+            zoom = Math.min(Math.max(0.1, zoom + (e.deltaY > 0 ? -0.05 : 0.05)), 3);
+            board.style.transform = `scale(${zoom})`;
+        }
+    }, { passive: false });
+
+    function saveState() {
+        const state = board.innerHTML;
+        if (history.length === 0 || history[history.length - 1] !== state) {
+            history.push(state);
+            if (history.length > 30) history.shift();
+        }
+    }
+
+    function undo() {
+        if (history.length > 1) {
+            history.pop();
+            board.innerHTML = history[history.length - 1];
+            document.querySelectorAll('.node').forEach(n => makeDraggable(n));
+        }
+    }
+
+    function toggleTheme() { document.body.classList.toggle('light-mode'); }
+
+    function addNote(data = {x: 100, y: 150, w: 200, h: 150, text: ""}) {
+        const div = document.createElement('div');
+        div.className = 'node';
+        div.style.left = data.x + 'px'; div.style.top = data.y + 'px';
+        div.style.width = data.w + 'px'; div.style.height = data.h + 'px';
+        div.innerHTML = `<textarea placeholder="Type...">${data.text}</textarea>`;
+        board.appendChild(div);
+        makeDraggable(div);
+        saveState();
+    }
+
+    function addImage(src, x=100, y=150, w=300, h=300) {
+        const div = document.createElement('div');
+        div.className = 'node img-node';
+        div.style.left = x + 'px'; div.style.top = y + 'px';
+        div.style.width = w + 'px'; div.style.height = h + 'px';
+        div.innerHTML = `<img src="${src}">`;
+        board.appendChild(div);
+        makeDraggable(div);
+        saveState();
+    }
+
+    function makeDraggable(el) {
+        let x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+        el.onmousedown = (e) => {
+            if (e.button !== 0) return;
+            if (selectedNode) selectedNode.classList.remove('selected');
+            selectedNode = el; el.classList.add('selected');
+            if (e.target.tagName === 'TEXTAREA' || e.offsetX > el.clientWidth - 20) return;
+            e.preventDefault();
+            x2 = e.clientX; y2 = e.clientY;
+            document.onmousemove = (e) => {
+                x1 = x2 - e.clientX; y1 = y2 - e.clientY;
+                x2 = e.clientX; y2 = e.clientY;
+                el.style.top = (el.offsetTop - (y1 / zoom)) + "px";
+                el.style.left = (el.offsetLeft - (x1 / zoom)) + "px";
+                resetIdle();
+            };
+            document.onmouseup = () => { document.onmousemove = null; saveState(); };
+        };
+    }
+
+    function start() {
+        const gh = Math.max(0, parseInt(document.getElementById('gh').value) || 0);
+        const gm = Math.max(0, parseInt(document.getElementById('gm').value) || 0);
+        const gs = Math.max(0, parseInt(document.getElementById('gs').value) || 0);
+        const ih = Math.max(0, parseInt(document.getElementById('ih').value) || 0);
+        const im = Math.max(0, parseInt(document.getElementById('im').value) || 0);
+        const is = Math.max(0, parseInt(document.getElementById('is').value) || 0);
+
+        goalSec = (gh * 3600) + (gm * 60) + gs;
+        idleLimit = (ih * 3600) + (im * 60) + is;
+
+        if (goalSec <= 0 || idleLimit <= 0) {
+            alert("Please set valid Goal and Idle timers.");
+            return;
+        }
+
+        isRunning = true;
+        alarmActive = false;
+        idleSec = 0;
+        
+        document.getElementById('setup').style.display = 'none';
+        document.getElementById('active-ui').style.display = 'flex';
+        updateUI();
+    }
+
+    function stop() {
+        if(confirm("Stop session?")) {
+            isRunning = false;
+            alarmActive = false;
+            document.getElementById('setup').style.display = 'flex';
+            document.getElementById('active-ui').style.display = 'none';
+            document.body.classList.remove('alarm-active');
+            insultPopup.style.display = 'none';
+            alarm.pause();
+        }
+    }
+
+    setInterval(() => {
+        if (!isRunning) return;
+
+        if (!alarmActive) {
+            goalSec--;
+            idleSec++;
+        }
+
+        if (idleSec >= idleLimit && !alarmActive) {
+            triggerAlarm();
+        }
+
+        if (goalSec <= 0) {
+            alert("Session Goal Reached!");
+            stop();
+        }
+
+        updateUI();
+    }, 1000);
+
+    function triggerAlarm() {
+        alarmActive = true;
+        alarmLockUntil = Date.now() + 4000; // Updated to 4 seconds
+        document.body.classList.add('alarm-active');
+        
+        const randomIndex = Math.floor(Math.random() * insults.length);
+        insultText.innerText = insults[randomIndex];
+        
+        insultPopup.style.display = 'block';
+        alarm.play().catch(e => console.log("Audio play failed: ", e));
+    }
+
+    function resetIdle() {
+        if (!isRunning) return;
+        if (alarmActive && Date.now() < alarmLockUntil) return;
+
+        idleSec = 0;
+        if (alarmActive) {
+            alarmActive = false;
+            document.body.classList.remove('alarm-active');
+            insultPopup.style.display = 'none';
+            alarm.pause();
+            alarm.currentTime = 0;
+        }
+    }
+
+    function updateUI() {
+        document.getElementById('txt-goal').innerText = formatTime(goalSec);
+        const remainingIdle = Math.max(0, idleLimit - idleSec);
+        document.getElementById('txt-idle').innerText = "IDLE: " + formatTime(remainingIdle);
+    }
+
+    function formatTime(s) {
+        const h = Math.floor(s/3600); const m = Math.floor((s%3600)/60); const sec = s % 60;
+        return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+    }
+
+    document.querySelectorAll('input[type="number"]').forEach(input => {
+        input.addEventListener('keydown', (e) => {
+            if(e.key === '-' || e.key === 'e') e.preventDefault();
+        });
+    });
+
+    window.onmousemove = resetIdle;
+    window.onmousedown = resetIdle;
+    window.onkeydown = resetIdle;
+
+    function dropHandler(e) { e.preventDefault(); handleFile(e.dataTransfer.files, e.clientX/zoom, e.clientY/zoom); }
+    function dragOverHandler(e) { e.preventDefault(); }
+    function handleFile(files, x=200, y=200) {
+        if (files[0]) {
+            const r = new FileReader();
+            r.onload = e => addImage(e.target.result, x, y);
+            r.readAsDataURL(files[0]);
+        }
+    }
+
+    function save() {
+        const data = [];
+        document.querySelectorAll('.node').forEach(n => {
+            const isNote = !!n.querySelector('textarea');
+            data.push({
+                type: isNote ? 'note' : 'img',
+                x: parseInt(n.style.left), y: parseInt(n.style.top),
+                w: n.offsetWidth, h: n.offsetHeight,
+                content: isNote ? n.querySelector('textarea').value : n.querySelector('img').src
+            });
+        });
+        const blob = new Blob([JSON.stringify(data)], {type: "application/json"});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "lockin_session.json"; a.click();
+    }
+
+    function load() {
+        const inp = document.createElement('input'); inp.type = 'file';
+        inp.onchange = e => {
+            const reader = new FileReader();
+            reader.onload = ev => {
+                const nodes = JSON.parse(ev.target.result);
+                board.innerHTML = "";
+                nodes.forEach(n => {
+                    if (n.type === 'note') addNote({x:n.x, y:n.y, w:n.w, h:n.h, text:n.content});
+                    else addImage(n.content, n.x, n.y, n.w, n.h);
+                });
+                saveState();
+            };
+            reader.readAsText(e.target.files[0]);
+        };
+        inp.click();
+    }
+
+    saveState();
+</script>
+</body>
+</html>
